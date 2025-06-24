@@ -1,0 +1,442 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Earthquake Data Analysis</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <div class="container">
+        <h1>Jingyuan Chen - CSE 6332</h1>
+        <h1>🌍 Earthquake Data Analysis System</h1>
+        <p style="text-align: center; color: #666;">Analyze earthquake patterns and trends from the last 30 days (5/11-6/10)</p>
+        
+        <!-- Flash Messages -->
+        {% with messages = get_flashed_messages() %}
+            {% if messages %}
+                {% for message in messages %}
+                    <div class="success">{{ message }}</div>
+                {% endfor %}
+            {% endif %}
+        {% endwith %}
+        
+        <!-- File Upload Section -->
+        <div class="upload-section">
+            <h2>📁 Upload Earthquake Data (CSV)</h2>
+            <p>Clean and store your data in Azure SQL Database within 10 sec.</p>
+            <form action="/upload" method="post" enctype="multipart/form-data">
+                <input type="file" name="file" accept=".csv" required>
+                <br>
+                <button type="submit">Upload and Process Data</button>
+            </form>
+            <p style="font-size: 12px; color: #666; margin-top: 10px;">
+                Required columns: id, time, latitude, longitude, depth, mag, place<br>
+                Maximum file size: 16MB
+            </p>
+        </div>
+    </div>
+
+    <!-- Interface -->
+    <div class="container">
+        <h2>🔍 Earthquake Data Analysis</h2>
+        
+        <div class="query-section">
+            <!-- Magnitude > 5.0 -->
+            <div class="query-card">
+                <h3>Large Earthquakes (Magnitude > 5.0)</h3>
+                <p>Find all earthquakes with magnitude greater than 5.0 (ORDER BY magnitude DESC)</p>
+                <button onclick="queryMagnitudeGreaterThan5()">Search Large Earthquakes</button>
+                <div id="result1" class="results" style="display: none;"></div>
+            </div>
+
+            <!-- Magnitude Range -->
+            <div class="query-card">
+                <h3>Magnitude Range Search</h3>
+                <p>Search earthquakes within specific magnitude and time ranges</p>
+                <label>Min Magnitude:</label>
+                <input type="number" id="minMag" value="6.0" step="0.1" min="0" max="10">
+                <label>Max Magnitude:</label>
+                <input type="number" id="maxMag" value="6.5" step="0.1" min="0" max="10">
+                <label>Start Date (optional):</label>
+                <input type="date" id="startDate">
+                <label>End Date (optional):</label>
+                <input type="date" id="endDate">
+                <button onclick="queryMagnitudeRange()">Search by Range</button>
+                <div id="result2" class="results" style="display: none;"></div>
+            </div>
+
+            <!-- Near Location -->
+            <div class="query-card">
+                <h3>Earthquakes Near Location</h3>
+                <p>Find earthquakes within a specified distance from a location</p>
+                <label>Latitude:</label>
+                <input type="number" id="targetLat" step="0.0001" placeholder="e.g., 34.0522">
+                <label>Longitude:</label>
+                <input type="number" id="targetLon" step="0.0001" placeholder="e.g., -118.2437">
+                <label>Radius (km):</label>
+                <input type="number" id="radius" value="50" min="1" max="1000">
+                <button onclick="queryNearLocation()">Search Near Location</button>
+                <div id="result3" class="results" style="display: none;"></div>
+            </div>
+
+            <!-- Clusters -->
+            <div class="query-card">
+                <h3>Earthquake Clusters</h3>
+                <p>Find earthquake clusters and areas most prone to earthquakes by HDBSCAN High-Speed ​​Clustering (wait around 3 sec)</p>
+                <button onclick="queryClusters()">Find Clusters</button>
+                <div id="result4" class="results" style="display: none;"></div>
+            </div>
+
+            <!-- Night Analysis -->
+            <div class="query-card">
+                <h3>Large Earthquakes at Night</h3>
+                <p>Analyze if large earthquakes (>4.0 magnitude) occur more often at night (local time is calculated from longitude)</p>
+                <button onclick="queryNightAnalysis()">Analyze Night Pattern</button>
+                <div id="result5" class="results" style="display: none;"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Utility function to show loading state
+        function showLoading(resultId) {
+            const resultDiv = document.getElementById(resultId);
+            resultDiv.style.display = 'block';
+            resultDiv.innerHTML = '<div class="loading">Loading...</div>';
+        }
+
+        // Utility function to show error
+        function showError(resultId, error) {
+            const resultDiv = document.getElementById(resultId);
+            resultDiv.innerHTML = `<div class="error">Error: ${error}</div>`;
+        }
+
+        // Magnitude > 5.0
+        async function queryMagnitudeGreaterThan5() {
+            showLoading('result1');
+            try {
+                const response = await fetch('/api/earthquakes/magnitude_greater_than_5');
+                const data = await response.json();
+                
+                if (data.error) {
+                    showError('result1', data.error);
+                    return;
+                }
+
+                let html = `
+                    <div class="stats">
+                        <div class="stat-card">
+                            <div class="stat-number">${data.count}</div>
+                            <div class="stat-label">Large Earthquakes Found</div>
+                        </div>
+                    </div>
+                `;
+
+                if (data.earthquakes.length > 0) {
+                    html += `
+                        <table>
+                            <tr>
+                                <th>Time</th>
+                                <th>Magnitude</th>
+                                <th>Location</th>
+                                <th>Coordinates</th>
+                                <th>Depth</th>
+                            </tr>
+                    `;
+                    
+                    data.earthquakes.slice(0, 10).forEach(eq => {
+                        html += `
+                            <tr>
+                                <td>${new Date(eq.time).toLocaleString()}</td>
+                                <td><strong>${eq.magnitude}</strong></td>
+                                <td>${eq.place}</td>
+                                <td>${eq.latitude.toFixed(4)}, ${eq.longitude.toFixed(4)}</td>
+                                <td>${eq.depth.toFixed(1)} km</td>
+                            </tr>
+                        `;
+                    });
+                    
+                    html += '</table>';
+                    if (data.earthquakes.length > 10) {
+                        html += `<p><em>Showing top 10 of ${data.earthquakes.length} results</em></p>`;
+                    }
+                }
+
+                document.getElementById('result1').innerHTML = html;
+            } catch (error) {
+                showError('result1', error.message);
+            }
+        }
+
+        // Magnitude Range
+        async function queryMagnitudeRange() {
+            showLoading('result2');
+            try {
+                const minMag = document.getElementById('minMag').value;
+                const maxMag = document.getElementById('maxMag').value;
+                const startDate = document.getElementById('startDate').value;
+                const endDate = document.getElementById('endDate').value;
+
+                let url = `/api/earthquakes/magnitude_range?min_mag=${minMag}&max_mag=${maxMag}`;
+                if (startDate) url += `&start_date=${startDate}`;
+                if (endDate) url += `&end_date=${endDate}`;
+
+                const response = await fetch(url);
+                const data = await response.json();
+                
+                if (data.error) {
+                    showError('result2', data.error);
+                    return;
+                }
+
+                let html = `
+                    <div class="stats">
+                        <div class="stat-card">
+                            <div class="stat-number">${data.count}</div>
+                            <div class="stat-label">Earthquakes Found</div>
+                        </div>
+                    </div>
+                    <p><strong>Magnitude Range:</strong> ${data.magnitude_range}</p>
+                    <p><strong>Date Range:</strong> ${data.date_range}</p>
+                `;
+
+                if (data.earthquakes.length > 0) {
+                    html += `
+                        <table>
+                            <tr>
+                                <th>Time</th>
+                                <th>Magnitude</th>
+                                <th>Location</th>
+                                <th>Coordinates</th>
+                            </tr>
+                    `;
+                    
+                    data.earthquakes.slice(0, 15).forEach(eq => {
+                        html += `
+                            <tr>
+                                <td>${new Date(eq.time).toLocaleString()}</td>
+                                <td>${eq.magnitude}</td>
+                                <td>${eq.place}</td>
+                                <td>${eq.latitude.toFixed(4)}, ${eq.longitude.toFixed(4)}</td>
+                            </tr>
+                        `;
+                    });
+                    
+                    html += '</table>';
+                    if (data.earthquakes.length > 15) {
+                        html += `<p><em>Showing top 15 of ${data.earthquakes.length} results</em></p>`;
+                    }
+                }
+
+                document.getElementById('result2').innerHTML = html;
+            } catch (error) {
+                showError('result2', error.message);
+            }
+        }
+
+        // Near Location
+        async function queryNearLocation() {
+            showLoading('result3');
+            try {
+                const latitude = document.getElementById('targetLat').value;
+                const longitude = document.getElementById('targetLon').value;
+                const radius = document.getElementById('radius').value;
+
+                if (!latitude || !longitude) {
+                    showError('result3', 'Please enter both latitude and longitude');
+                    return;
+                }
+
+                const response = await fetch(`/api/earthquakes/near_location?latitude=${latitude}&longitude=${longitude}&radius=${radius}`);
+                const data = await response.json();
+                
+                if (data.error) {
+                    showError('result3', data.error);
+                    return;
+                }
+
+                let html = `
+                    <div class="stats">
+                        <div class="stat-card">
+                            <div class="stat-number">${data.count}</div>
+                            <div class="stat-label">Nearby Earthquakes</div>
+                        </div>
+                    </div>
+                    <p><strong>Target Location:</strong> ${data.target_location.latitude}, ${data.target_location.longitude}</p>
+                    <p><strong>Search Radius:</strong> ${data.radius_km} km</p>
+                `;
+
+                if (data.earthquakes.length > 0) {
+                    html += `
+                        <table>
+                            <tr>
+                                <th>Distance (km)</th>
+                                <th>Magnitude</th>
+                                <th>Time</th>
+                                <th>Location</th>
+                            </tr>
+                    `;
+                    
+                    data.earthquakes.slice(0, 15).forEach(eq => {
+                        html += `
+                            <tr>
+                                <td><strong>${eq.distance_km}</strong></td>
+                                <td>${eq.magnitude}</td>
+                                <td>${new Date(eq.time).toLocaleString()}</td>
+                                <td>${eq.place}</td>
+                            </tr>
+                        `;
+                    });
+                    
+                    html += '</table>';
+                    if (data.earthquakes.length > 15) {
+                        html += `<p><em>Showing closest 15 of ${data.earthquakes.length} results</em></p>`;
+                    }
+                }
+
+                document.getElementById('result3').innerHTML = html;
+            } catch (error) {
+                showError('result3', error.message);
+            }
+        }
+
+        // Clusters
+        async function queryClusters() {
+            showLoading('result4');
+            try {
+                const response = await fetch('/api/earthquakes/clusters');
+                const data = await response.json();
+                
+                if (data.error) {
+                    showError('result4', data.error);
+                    return;
+                }
+
+                let html = `
+                    <div class="stats">
+                        <div class="stat-card">
+                            <div class="stat-number">${data.total_clusters}</div>
+                            <div class="stat-label">Clusters Found</div>
+                        </div>
+                    </div>
+                    <h4>Top Most Prone Areas:</h4>
+                `;
+
+                if (data.top_prone_areas.length > 0) {
+                    html += `
+                        <table>
+                            <tr>
+                                <th>Rank</th>
+                                <th>Center Location</th>
+                                <th>Earthquake Count</th>
+                                <th>Avg Magnitude</th>
+                                <th>Max Magnitude</th>
+                                <th>Radius</th>
+                                <th>Time Span</th>
+                            </tr>
+                    `;
+                    
+                    data.top_prone_areas.forEach((area, index) => {
+                        const timeSpan = area.first_earthquake && area.last_earthquake ? 
+                            `${new Date(area.first_earthquake).toLocaleDateString()} - ${new Date(area.last_earthquake).toLocaleDateString()}` : 
+                            'N/A';
+                        
+                        html += `
+                            <tr>
+                                <td><strong>${index + 1}</strong></td>
+                                <td>${area.center_latitude}, ${area.center_longitude}</td>
+                                <td><strong>${area.earthquake_count}</strong></td>
+                                <td>${area.average_magnitude}</td>
+                                <td><strong>${area.max_magnitude}</strong></td>
+                                <td><strong>${area.cluster_radius_km}</strong></td>
+                                <td>${timeSpan}</td>
+                            </tr>
+                        `;
+                    });
+                    
+                    html += '</table>';
+                } else {
+                    html += '<p>No significant clusters found (minimum 5 earthquakes per cluster).</p>';
+                }
+
+                document.getElementById('result4').innerHTML = html;
+            } catch (error) {
+                showError('result4', error.message);
+            }
+        }
+
+        // Night Analysis
+        async function queryNightAnalysis() {
+            showLoading('result5');
+            try {
+                const response = await fetch('/api/earthquakes/night_analysis');
+                const data = await response.json();
+                
+                if (data.error) {
+                    showError('result5', data.error);
+                    return;
+                }
+
+                let html = `
+                    <div class="stats">
+                        <div class="stat-card">
+                            <div class="stat-number">${data.total_large_earthquakes}</div>
+                            <div class="stat-label">Large Earthquakes (>4.0)</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-number">${data.night_earthquakes}</div>
+                            <div class="stat-label">Night Earthquakes</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-number">${data.night_percentage}%</div>
+                            <div class="stat-label">Night Percentage</div>
+                        </div>
+                    </div>
+                    
+                    <h4>Analysis Result:</h4>
+                    <p style="font-size: 16px; padding: 15px; background-color: ${data.occurs_more_at_night ? '#d4edda' : '#fff3cd'}; border-radius: 5px;">
+                        <strong>${data.occurs_more_at_night ? '🌙 YES' : '☀️ NO'}</strong> - 
+                        Large earthquakes ${data.occurs_more_at_night ? 'DO' : 'do NOT'} occur more often at night.
+                        <br><small>Night period is defined as 20:00-05:59 (10 hours = 41.7% of day)</small>
+                    </p>
+                    
+                    <h4>Distribution by Time Period:</h4>
+                    <table>
+                        <tr>
+                            <th>Time Period</th>
+                            <th>Earthquake Count</th>
+                            <th>Percentage</th>
+                        </tr>
+                `;
+                
+                data.time_period_distribution.forEach(period => {
+                    const percentage = ((period.count / data.total_large_earthquakes) * 100).toFixed(1);
+                    html += `
+                        <tr>
+                            <td>${period.time_period}</td>
+                            <td><strong>${period.count}</strong></td>
+                            <td>${percentage}%</td>
+                        </tr>
+                    `;
+                });
+                
+                html += '</table>';
+
+                document.getElementById('result5').innerHTML = html;
+            } catch (error) {
+                showError('result5', error.message);
+            }
+        }
+
+        // Set default date range (last 30 days)
+        document.addEventListener('DOMContentLoaded', function() {
+            const today = new Date();
+            const thirtyDaysAgo = new Date(today.getTime() - (30 * 24 * 60 * 60 * 1000));
+            
+            document.getElementById('endDate').value = today.toISOString().split('T')[0];
+            document.getElementById('startDate').value = thirtyDaysAgo.toISOString().split('T')[0];
+        });
+    </script>
+</body>
+</html>

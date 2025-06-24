@@ -1,0 +1,8 @@
+Flask
+pandas
+pyodbc
+azure-storage-blob
+Werkzeug
+dotenv
+gunicorn
+
